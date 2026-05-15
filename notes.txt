@@ -1,0 +1,125 @@
+20.04:
+- Tried to assert for output from testora tests, i.e. print statements
+- Problems: Cases like this: /root/conda/envs/scipy-dev/lib/python3.12/site-packages/numpy/core/fromnumeric.py:3787: RuntimeWarning: Degrees of freedom <= 0 for slice
+    --- Actual:
+    /home/clone/scipy/scipy-dev/lib/python3.12/site-packages/numpy/core/fromnumeric.py:3787: RuntimeWarning: Degrees of freedom <= 0 for slice
+- Same warning but different path due to different installation
+- Better: Replace each print statement with assertion, even though trivial, e.g. g1 = 1; print(g1) -> g1 = 1; assert 1 == g1
+- Agent needs to do that (non-deterministic)
+- However: If syntax error exists: Should run test from assertion file and assert for error.
+-> This still needs some thought, non-deterministic of llm should be minimized due to hallucinations
+-> other option try to optimize the deterministic creation of the assertion files
+
+
+
+First version for that:
+1. Replace Prints with assertions: Each /home/mini-swe-agent/input/tests/test[N].py file now contains the original test from Testora. However they do not contain assertions but print statements. Replace each print statement with an assert statement. To do that, look at the output from the logs.json file and assert what the values should be. Based on the different classifications, you can take the values for the assertions:
+      
+        Case 1 (Same Output): Assert that the current execution has the same values as the old_output.
+
+        Case 2 (Intended Change): Assert that the current execution has the same values as the new_output.
+
+        Case 3 (Regression): Assert that the current execution has the same values as the old_output (ignoring the "buggy" new_output).
+
+      2. If the original test has syntax errors, then create an assertion file which calls the test and captures the stderr to assert for the error. 
+
+04.05:
+PR commit hashes:
+Scipy:
+- 21768: ea916c6f7f487bd53e98de082649d542cc6106ed
+- 21076: 5247c04bc9fbd0c4834d443d410bf9e9a0e1d5d7
+- 20974: 055ea4532f2a15c68ac0db6786af005933bd0b87
+- 20751: 0ab0e563e67c06122a9fe055e619c5f442900537
+- 19263: 92fe79409b2a463c0e589b3e3e27ac11d337613a
+
+Pandas:
+- 60538: 5c9b6718dea589be6fafab04adbd22dd0550a061
+- 57399: 719e4a638a4383b859d684db4ad4f7e471a58aaa
+- 57034: d928a5cc222be5968b2f1f8a5f8d02977a8d6c2d
+- 55108: 0bdbc44babac09225bdde02b642252ce054723e3
+
+
+06.05. Meeting:
+- timeout command to restrict mini-swe-agent ✅
+
+timeout 15m mini -y --task task & 
+
+- run 3 times and run on all patches count how many pass tests
+- number of generated patches, incorrect (number of patches that do not pass tests), plausible (#patches pass test cases), correct (pass test cases + equivalent to dev fix)
+
+- Standard setup: Limit budget, same constraints (time, costs) 40 min and 1 dollar per task ✅
+
+- use -y mode ✅
+- maybe also run it on prototype
+- automate running mini-swe-agent ✅
+
+Execute all developer tests (not just from one module)
+Developer Tests: Before patch; After patch 1; After patch 2; After patch 3;
+Testora Test: Before patch; After patch 1; After patch 2; After patch 3;
+Scipy:
+- 21768: 3 failed, 56363 passed, 3467 skipped, 16139 deselected, 187 xfailed, 14 xpassed in 845.67s (0:14:05); 
+    patch 1: No changes were made; 
+        Testora: same behaviour as without fix 
+    patch 2: No changes were made; 
+        Testora: same behaviour as without fix
+    patch 3: 6 failed, 49440 passed, 2199 skipped, 11258 deselected, 157 xfailed, 14 xpassed in 560.23s (0:09:20)
+        Testora: same behaviour as without fix: Result shape: (3, 1)
+        
+- 21076: 
+    patch 1: ; 
+        Testora: 
+    patch 2: ; 
+        Testora: 
+    patch 3:
+        Testora:
+- 20974: 
+    patch 1: ; 
+        Testora: 
+    patch 2: ; 
+        Testora: 
+    patch 3:
+        Testora:
+- 20751: 
+    patch 1: ; 
+        Testora: 
+    patch 2: ; 
+        Testora: 
+    patch 3:
+        Testora:
+- 19263: 
+    patch 1: ; 
+        Testora: 
+    patch 2: ; 
+        Testora: 
+    patch 3:
+        Testora:
+
+Pandas:
+- 60538: 
+    patch 1: ; 
+        Testora: 
+    patch 2: ; 
+        Testora: 
+    patch 3:
+        Testora:
+- 57399: 
+    patch 1: ; 
+        Testora: 
+    patch 2: ; 
+        Testora: 
+    patch 3:
+        Testora:
+- 57034: 
+    patch 1: ; 
+        Testora: 
+    patch 2: ; 
+        Testora: 
+    patch 3:
+        Testora:
+- 55108: 
+    patch 1: ; 
+        Testora: 
+    patch 2: ; 
+        Testora: 
+    patch 3:
+        Testora:

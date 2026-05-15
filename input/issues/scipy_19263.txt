@@ -1,0 +1,45 @@
+Title: [BUG] scipy.fft.hfftn: Crash when passing Python lists (AttributeError: 'list' object has no attribute 'shape')
+
+Description
+A regression has been identified in scipy.fft.hfftn (and likely ihfftn) following the recent refactoring for array-API support (PR #19263). The function now fails when passed a Python nested list (or any array_like that is not a formal array object), throwing an AttributeError.
+
+Historically, SciPy's FFT functions have accepted Python sequences by internally converting them to NumPy arrays. This conversion appears to have been accidentally removed for the hfftn path.
+
+Reproducer
+Python
+```
+import numpy as np
+from scipy.fft import hfftn
+
+# 3-D nested list input
+x = [[[1.0, 1.0], [1.0, 1.0]],
+     [[1.0, 1.0], [1.0, 1.0]],
+     [[1.0, 1.0], [1.0, 1.0]]]
+
+# This worked in SciPy 1.13 and earlier
+y = hfftn(x) 
+
+Actual Behavior (Regression)
+The function crashes with the following traceback:
+```
+Traceback (most recent call last):
+  File "repro.py", line 10, in <module>
+    y = hfftn(x)
+  File "scipy/fft/_pocketfft/basic.py", line 208, in c2rn
+    shape[-1] = (x.shape[axes[-1]] - 1) * 2
+AttributeError: 'list' object has no attribute 'shape'
+```
+
+Expected Behavior
+The function should accept the nested list, convert it to a NumPy array internally (when using the NumPy backend), and return the Hermitian FFT.
+
+Context & Technical Analysis
+The regression was introduced in PR #19263, which updated the FFT dispatching logic.
+
+1. The new implementation in scipy/fft/_basic_backend.py calls _pocketfft.hfftn directly when the namespace is NumPy.
+
+2. In the refactoring, the explicit np.asarray(x) call that previously guarded the input was removed.
+
+3. The internal pocketfft helper functions (specifically c2rn) attempt to access x.shape immediately to calculate the output dimensions, assuming the input is already an array.
+
+4. Since the public API is documented to accept array_like, this breaks compatibility with any input that is not already a NumPy array or a similar object with a .shape attribute.

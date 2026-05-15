@@ -1,0 +1,20 @@
+diff --git a/pandas/core/series.py b/pandas/core/series.py
+index ad63bc8a87..2d08b2c7bf 100644
+--- a/pandas/core/series.py
++++ b/pandas/core/series.py
+@@ -3519,8 +3519,14 @@ class Series(base.IndexOpsMixin, NDFrame):  # type: ignore[misc]
+             if self.index.equals(other.index):
+                 return self.mask(self.isna(), other)
+             elif self._can_hold_na and not isinstance(self.dtype, SparseDtype):
++                pre_index = self.index
+                 this, other = self.align(other, join="outer")
+-                return this.mask(this.isna(), other)
++                idx = this.index
++                mask_self_has = idx.isin(pre_index)
++                # for indices present only in other, take other's value (preserve None)
++                # for indices present in self, only replace where self is NA and other is not NA
++                mask_from_other = (~mask_self_has) | (mask_self_has & this.isna() & notna(other))
++                return this.mask(mask_from_other, other)
+ 
+         new_index = self.index.union(other.index)
+ 

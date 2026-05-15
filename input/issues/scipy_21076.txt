@@ -1,0 +1,40 @@
+Title: [BUG] scipy.stats.differential_entropy: Numeric regression/accuracy loss for integer inputs (Ebrahimi estimator)
+
+Description
+A regression has been identified in scipy.stats.differential_entropy following the integration of Array API support (PR #21076). When integer arrays are passed to the function, it now produces incorrect results. This is due to internal variables inheriting the integer dtype of the input, causing floating-point calculations to be truncated during assignment.
+
+Reproducer
+Python
+```
+import numpy as np
+from scipy.stats import differential_entropy
+
+# Integer input
+values = np.arange(12, dtype=np.int32) 
+
+res = differential_entropy(values)
+
+# Expected result (based on SciPy < 1.14/1.15): ~2.4849066
+# Actual result: 2.61799126
+print(f"differential_entropy(values) -> {res}")
+```
+
+Actual Behavior (Regression)
+For an input of np.arange(12, dtype=np.int32), the function returns 2.617991265824296.
+The result is numerically incorrect because the internal estimator now performs integer truncation on weights that should be floating-point.
+
+Expected Behavior
+The function should return 2.484906649788001. Even if the input is an integer array, the entropy calculation (which is inherently continuous/floating-point) should be performed with floating-point precision.
+
+Context & Technical Analysis
+The regression was introduced in the Ebrahimi estimator logic within _ebrahimi_entropy.
+
+1. Previously, the internal array i was explicitly cast: i = np.arange(1, n+1).astype(float). This ensured that dependent arrays like ci were also floating-point.
+
+2. The new Array API code uses: i = xp.arange(1, n+1, dtype=X.dtype).
+
+3. If X (the input) is int32, i and ci become integer arrays.
+
+4. When the code later performs: ci[i <= m] = 1 + (i[i <= m] - 1)/m, the right-hand side is a float, but because ci is an integer array, the values are truncated/cast to integers during assignment.
+
+This leads to an incorrect weight matrix and, consequently, an incorrect entropy value.

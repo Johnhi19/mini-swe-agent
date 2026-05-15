@@ -1,0 +1,44 @@
+Title: [BUG] PeriodIndex.difference fails to remove elements when compared against an Index of strings
+
+Description
+A functional regression has been identified in Index.difference (specifically affecting PeriodIndex) following PR #55108. The operation now fails to identify and remove matching elements when a PeriodIndex is differenced with a generic Index containing string representations of those periods. Instead of the expected subset, the entire original PeriodIndex is returned.
+
+Reproducer
+Python
+```
+import pandas as pd
+
+# Create a PeriodIndex
+index1 = pd.period_range('2022-01-01', periods=5, freq='M') 
+# Create an Index of strings representing a subset of those periods
+index2 = pd.Index(['2022-02', '2022-03'])
+
+# Perform the difference
+result = index1.difference(index2)
+
+print("\nResult of index1.difference(index2):")
+print(result)
+```
+
+Actual Behavior (Regression)
+The difference method fails to remove the matching periods. The output is identical to the input index1:
+```
+PeriodIndex(['2022-01', '2022-02', '2022-03', '2022-04', '2022-05'], dtype='period[M]')
+```
+
+Expected Behavior
+The matching periods should be removed, as they were in Pandas 2.1.x:
+```
+PeriodIndex(['2022-01', '2022-04', '2022-05'], dtype='period[M]')
+```
+
+Context & Technical Analysis
+The regression was introduced by a refactor of the _difference method intended to improve performance and attribute preservation.
+
+1. The Old Logic: Used self.get_indexer_for(other). Because self is a PeriodIndex, its get_indexer_for implementation knows how to parse the strings in other into periods for a successful match.
+
+2. The New Logic: Swapped the direction to other.get_indexer_for(self).
+
+3. The Root Cause: get_indexer_for is asymmetric. When other is a generic object Index containing strings, its get_indexer_for method does not know how to coerce the Period objects from self back into strings. Consequently, every lookup returns -1, leading the logic to conclude that no elements from self exist in other.
+
+This change breaks the "coercion-aware" nature of specialized Index classes (PeriodIndex, DatetimeIndex, TimedeltaIndex) when interacting with generic indices during set operations.

@@ -1,0 +1,52 @@
+Title: [BUG] scipy.stats.combine_pvalues: Regression in Stouffer's method when using axis > 0 with 1D weights
+
+Description
+A regression has been identified in scipy.stats.combine_pvalues introduced by PR #20974 (Native axis support). When using Stouffer's method with an axis argument other than 0, providing a 1D array of weights results in a ValueError (specifically a matmul shape mismatch) despite the input being valid.
+
+Reproducer
+Python
+```
+import numpy as np
+from scipy import stats
+
+# 2x3 array of p-values
+pvalues = np.array([[0.01, 0.02, 0.03],
+                    [0.04, 0.05, 0.06]])
+
+# 1D weights of length 3 (matching axis=1)
+weights = np.array([1.0, 1.5, 2.0])
+
+# This worked prior to the axis-support rewrite.
+# It should combine across rows, producing two results.
+res = stats.combine_pvalues(pvalues, method='stouffer', weights=weights, axis=1)
+
+print("Statistic:", res.statistic)
+print("P-value:", res.pvalue)
+```
+
+Actual Behavior (Regression)
+The code raises a ValueError from the underlying matrix multiplication:
+```
+Exception message: matmul: Input operand 1 has a mismatch in its core dimension 0, with gufunc signature (n?,k),(k,m?)->(n?,m?) (size 2 is different from 3)
+```
+
+Expected Behavior
+The calculation should succeed, contracting the p-values along the specified axis using the provided weights.
+Expected Output:
+```
+Result.statistic (per row): [3.40511713 2.72137027]
+Result.pvalue (per row): [0.00033068 0.00325059]
+```
+
+Context & Technical Analysis
+The regression is located in the implementation of Stouffer's method within combine_pvalues.
+
+1. The new logic computes Zi = norm.isf(pvalues).
+
+2. It then attempts to compute the statistic using: statistic = weights @ Zi / xp.linalg.vector_norm(weights, axis=axis).
+
+3. The @ (matmul) operator assumes that the dimension to be summed over is the first dimension of Zi (axis 0).
+
+4. When axis=1 is requested, the code performs (3,) @ (2, 3), which fails because the core dimension 3 (weights) does not match the leading dimension 2 of the Z-score matrix.
+
+Furthermore, checking weights.shape[axis] for a 1D weights vector where axis > 0 will raise an IndexError, making the function fragile to valid 1D weight inputs.

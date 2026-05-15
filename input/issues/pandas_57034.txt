@@ -1,0 +1,55 @@
+Title: [BUG] Series.combine_first incorrectly converts None to NaN for non-overlapping indices in object-dtype Series
+
+Description
+A behavioral regression has been identified in Series.combine_first following PR #57034. While the PR was intended as a performance optimization, it introduced a side effect: for indices that exist only in the caller Series (self), existing None values are being replaced by np.nan when the Series has an object dtype.
+
+This breaks the long-standing behavior where combine_first should only update values using other at locations where self is null, and should leave self-only indices entirely untouched.
+
+Reproducer
+Python
+```
+import pandas as pd
+
+# Create two object-dtype Series with non-overlapping indices
+a = pd.Series([1, None], index=["left", "only_a"], dtype=object)
+b = pd.Series([None, 2], index=["left_b", "left"], dtype=object)
+
+# Perform combine_first
+res = a.combine_first(b)
+
+print("\nResult of a.combine_first(b):")
+print(res)
+```
+
+Actual Behavior (Regression)
+The value at index only_a is converted to np.nan:
+```
+left         1
+left_b    None
+only_a     NaN
+dtype: object
+```
+
+Expected Behavior
+The value at index only_a should remain None:
+```
+left         1
+left_b    None
+only_a    None
+dtype: object
+```
+
+Context & Technical Analysis
+The regression was introduced by the new "fast-path" logic in Series.combine_first.
+
+1. The optimization triggers when self.dtype == other.dtype.
+
+2. It aligns both Series to an outer union and then uses this.mask(this.isna(), other).
+
+3. During the alignment, the other Series is expanded to include the index only_a. Since other does not have this index, it is filled with np.nan.
+
+4. The mask operation sees that this (the aligned a) has a null at only_a, so it pulls the value from the aligned other.
+
+5. Because the aligned other contains np.nan at that position, the original None in a is overwritten by np.nan.
+
+Previously, combine_first avoided this by using a logic that preserved the original values of self for indices not present in other.

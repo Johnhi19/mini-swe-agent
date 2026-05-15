@@ -1,0 +1,54 @@
+Title: [BUG] DataFrame.add (and other arithmetic ops) ignores fill_value for unaligned MultiIndex columns
+
+Description
+A regression has been identified in DataFrame arithmetic operations involving MultiIndex columns. After PR #60538, using fill_value during an operation (like .add(), .sub(), etc.) fails to fill missing values when the columns are unaligned MultiIndexes. Instead of the filled value, NaN is returned, effectively ignoring the user-provided fill_value.
+
+Reproducer
+Python
+```
+import pandas as pd
+import numpy as np
+
+# Create two DataFrames with unaligned MultiIndex columns
+left_cols = pd.MultiIndex.from_tuples([("A", 1), ("B", 2)])
+right_cols = pd.MultiIndex.from_tuples([("B", 2), ("C", 3)])
+
+left = pd.DataFrame([[1, 2]], index=["r"], columns=left_cols)
+right = pd.DataFrame([[10, 30]], index=["r"], columns=right_cols)
+
+# Operation with fill_value=0
+# Expected: Missing columns "A" and "C" should be treated as 0
+res_fill = left.add(right, fill_value=0)
+
+print("\nResult with fill_value=0:")
+print(res_fill)
+```
+
+Actual Behavior (Regression)
+The fill_value is ignored, and the resulting DataFrame contains NaN for any column that was not present in both inputs.
+```
+Result with fill_value=0:
+     A   B   C
+    1   2   3
+r NaN  12 NaN
+```
+
+Expected Behavior
+Missing values should be replaced by the fill_value before the operation, consistent with Pandas behavior for single-level indexes.
+```
+Result with fill_value=0:
+      A   B     C
+     1   2     3
+r  1.0  12  30.0
+```
+
+Context & Technical Analysis
+The regression was introduced in PR #60538, which aimed to fix MultiIndex column alignment.
+
+1. The PR added a new MultiIndex-specific branch in _arith_method_with_reindex.
+
+2. This branch performs a shallow copy and manually reassigns .columns.
+
+3. By forcing this specific reindexing path for MultiIndex columns, the logic that previously handled fill_value application during the alignment/reindexing phase is bypassed.
+
+4. Specifically, _should_reindex_frame_op was updated to force reindexing when MultiIndex columns are unequal, but the subsequent execution path does not correctly carry the fill_value through to the actual arithmetic operation.

@@ -1,0 +1,47 @@
+This log identifies a nuanced regression where a PR aimed at preserving types actually causes silent data truncation in certain mixed-type scenarios.
+
+Here is the structured GitHub issue based on your analysis.
+Title: [BUG] pd.interval_range incorrectly truncates results to integer when freq is a NumPy float or when float dtypes are mismatched
+
+Description
+A regression has been identified in pd.interval_range following PR #57399. While the PR successfully preserves specific subtypes (like int8 or float32) when both start and end share the same dtype, the new dtype-detection logic is incomplete. It fails to account for freq being a NumPy floating-point type (other than float16) and does not correctly handle mismatched NumPy float dtypes, leading to unexpected downcasting to int64 and silent truncation of values.
+
+Reproducer
+Python
+```
+# Example 3: Numpy int8 start/end -> subtype preserved as int8
+import pandas as pd
+import numpy as np
+
+start = np.int8(1)
+end = np.int8(10)
+freq = np.int8(1)
+
+res = pd.interval_range(start=start, end=end, freq=freq)
+print("Result IntervalIndex:", res)
+```
+
+Actual Behavior (Regression)
+```
+Result IntervalIndex: IntervalIndex([(1, 2], (2, 3], (3, 4], (4, 5], (5, 6], (6, 7], (7, 8], (8, 9],(9, 10]],
+              dtype='interval[int64, right]')
+```
+
+Expected Behavior
+```
+Result IntervalIndex: IntervalIndex([(1, 2], (2, 3], (3, 4], (4, 5], (5, 6], (6, 7], (7, 8], (8, 9],
+               (9, 10]],
+              dtype='interval[int8, right]')
+```
+
+
+Context & Technical Analysis
+The regression stems from the new dtype-detection logic in pandas/core/indexes/interval.py. The logic currently follows this priority:
+
+1. It checks if start, end, or freq are instances of Python float or np.float16. If so, it sets dtype = float64.
+
+2. It then checks if start.dtype == end.dtype. If they match, it adopts that subtype.
+
+3. The Gap: If freq is np.float32 or np.float64, it does not trigger the first condition. If start and end are integers, it falls into the second or third condition, resulting in an integer dtype.
+
+4. When maybe_downcast_numeric is called later, it truncates the floating-point breaks to fit the incorrectly detected integer dtype.

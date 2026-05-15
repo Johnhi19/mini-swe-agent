@@ -1,0 +1,42 @@
+Title: [BUG] Regression in sparse matrix indexing: m[None, 1] returns transposed shape (3, 1) instead of (1, 4)
+
+Description
+A regression has been identified in scipy.sparse where indexing a sparse matrix with None (newaxis) combined with an integer index produces an incorrect shape. This appears to have been introduced during the rewrite of _index.py (specifically _validate_indices), where the handling of None and Ellipsis was moved to a two-pass algorithm.
+
+Reproducer
+Python
+```
+import numpy as np
+from scipy.sparse import csr_matrix
+
+arr = np.arange(12).reshape(3, 4)
+m = csr_matrix(arr)
+
+res = m[None, 1]
+
+print("Result type:", type(res))
+print("Result shape:", res.shape)
+```
+
+Actual Behavior (Regression)
+
+```
+Result type: <class 'scipy.sparse._csr.csr_matrix'>
+Result shape: (3, 1)
+```
+
+Expected Behavior
+
+```
+Result type: <class 'scipy.sparse._csr.csr_matrix'>
+Result shape: (1, 4)
+```
+
+Context & Analysis
+The regression stems from the rewrite of _validate_indices in scipy/sparse/_index.py.
+
+1. In the new two-pass logic, None (newaxis) is handled by appending 1 to idx_shape.
+
+2. However, the first pass, which handles ellipsis expansion by inserting slice(None) placeholders, appears to miscount the insertion point when None entries are present.
+
+3. For the case m[None, 1], the code incorrectly calculates the dimension expansion, leading to a returned shape of (3, 1) instead of (1, 4). This suggests the None is being treated as if it applies to a different axis or is interfering with the integer index positioning.

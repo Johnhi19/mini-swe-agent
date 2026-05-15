@@ -1,0 +1,27 @@
+diff --git a/pandas/core/series.py b/pandas/core/series.py
+index ad63bc8a87..aace9108da 100644
+--- a/pandas/core/series.py
++++ b/pandas/core/series.py
+@@ -3519,8 +3519,21 @@ class Series(base.IndexOpsMixin, NDFrame):  # type: ignore[misc]
+             if self.index.equals(other.index):
+                 return self.mask(self.isna(), other)
+             elif self._can_hold_na and not isinstance(self.dtype, SparseDtype):
++                orig_other_index = other.index
+                 this, other = self.align(other, join="outer")
+-                return this.mask(this.isna(), other)
++                # Only fill from other where other originally had the index and other is notna()
++                mask = this.isna() & other.notna()
++                # other.index.isin returns ndarray aligned with index
++                other_has_orig = other.index.isin(orig_other_index)
++                mask_arr = np.asarray(mask) & other_has_orig
++                if mask_arr.any():
++                    res = this.copy()
++                    # set values from other only at positions where mask_arr is True
++                    idx = mask_arr.nonzero()[0]
++                    res.iloc[idx] = other.iloc[idx]
++                    return res
++                else:
++                    return this
+ 
+         new_index = self.index.union(other.index)
+ 

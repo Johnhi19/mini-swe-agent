@@ -1,0 +1,44 @@
+Title: [BUG] scipy.stats.bartlett: Numerical regression and negative statistics for float32 inputs
+
+Description
+A numerical regression has been identified in scipy.stats.bartlett following the integration of Array API support (PR #20751). When providing float32 inputs, the function now performs intermediate calculations (variances, logs, and sums) in float32 precision. This leads to significant rounding errors, resulting in a negative Bartlett statistic (which is theoretically non-negative) and an inaccurate p-value of exactly 1.0.
+
+Reproducer
+Python
+```
+import numpy as np
+from scipy import stats
+
+# float32 inputs with very similar variances
+a = np.array([10.1, 10.2, 10.3, 10.4], dtype=np.float32)
+b = np.array([10.15, 10.25, 10.35, 10.45], dtype=np.float32)
+c = np.array([10.05, 10.15, 10.25, 10.35], dtype=np.float32)
+
+res = stats.bartlett(a, b, c)
+
+print(f"Statistic: {res.statistic}")
+print(f"P-value: {res.pvalue}")
+```
+
+Actual Behavior (Regression)
+```
+Statistic: -7.080736131930339e-07 (A negative value).
+P-value: 1.0 (Lost precision, rounded up).
+```
+
+Expected Behavior
+```
+Statistic: ~2.775586e-11 (A small but positive value).
+P-value: ~0.999999999986 (High-precision floating point).
+```
+
+Context & Technical Analysis
+The regression was introduced by the switch to Array-API-aware operations:
+
+1. Lack of Upcasting: Previously, intermediate variances (ssq) were stored in float64. The new implementation uses xp.var(sample, ...), which preserves the input dtype. For float32 inputs, all subsequent arithmetic (including xp.log) happens in float32.
+
+2. Accumulation Error: Summing logs and variances in low precision causes the T-statistic calculation to lose enough accuracy that the result "flips" to a negative sign.
+
+3. Semantic Type Error: The sample counts (Ni) are now initialized using the sample's dtype (e.g., dtype=np.float32 for float32 inputs). Initializing counts as floats rather than integers is semantically unusual and further complicates precision during the weighted sum of variances.
+
+4. P-value Truncation: Because the statistic T becomes a small negative number, distributions.chi2.sf(T, df) returns 1.0.
