@@ -105,7 +105,7 @@ agent:
   cost_limit: 1.0
 environment:
   timeout: 300
-  image: "pandas"
+  image: "scipy"
   cwd: "/home/mini-swe-agent"
   run_args: 
     - "--rm"

@@ -10,10 +10,10 @@ pandas_prs = {
 
 scipy_prs = {
     '19263': '92fe79409b2a463c0e589b3e3e27ac11d337613a',
-    '20751': '0ab0e563e67c06122a9fe055e619c5f442900537',
-    '20974': '055ea4532f2a15c68ac0db6786af005933bd0b87',
-    '21076': '5247c04bc9fbd0c4834d443d410bf9e9a0e1d5d7',
-    '21768': 'ea916c6f7f487bd53e98de082649d542cc6106ed'
+    # '20751': '0ab0e563e67c06122a9fe055e619c5f442900537',
+    # '20974': '055ea4532f2a15c68ac0db6786af005933bd0b87',
+    # '21076': '5247c04bc9fbd0c4834d443d410bf9e9a0e1d5d7',
+    # '21768': 'ea916c6f7f487bd53e98de082649d542cc6106ed'
 }
 
 def run_batch(project: str, prs: dict, config_file: str = 'default.yaml'):
@@ -25,9 +25,9 @@ First run the script in `/home/mini-swe-agent/input/rebuild_{project}.sh {target
 
 Please solve the issue found in /home/mini-swe-agent/input/issues/{project}_{pr_nr}.txt
 
-Assume that {project} is installed in an editable mode at the correct version for the PR. The source code is stored under /home/clone/{project}, if you want to look at it.
+Assume that {project} is installed in an editable mode at the correct version for the PR. The source code is stored under /home/{project}, if you want to look at it.
 
-write the patch into /home/mini-swe-agent/input/patches/{project}_{pr_nr}.txt with 'git diff' so we can apply that patch later with 'git apply'
+write the patch into /home/mini-swe-agent/input/patches/{project}_{pr_nr}.diff with 'git diff' so we can apply that patch later with 'git apply'
 """ 
         
         cmd_list = [
@@ -49,5 +49,5 @@ write the patch into /home/mini-swe-agent/input/patches/{project}_{pr_nr}.txt wi
 
 if __name__ == "__main__":
 
-    run_batch('pandas', pandas_prs)
-    #run_batch('scipy', scipy_prs, 'scipy.yaml')
+    #run_batch('pandas', pandas_prs)
+    run_batch('scipy', scipy_prs, 'scipy.yaml')

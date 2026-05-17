@@ -16,7 +16,52 @@ agent:
 
     Failure to follow these rules will cause your response to be rejected.
   instance_template: |
-    Please solve the following issue: {{task}}
+    Please solve this issue:
+
+    You have 5 phases you need to solve. Please execute one phase at a time. 
+
+    Phase 1: Parsing and Test Generation
+
+      1. In the /home/mini-swe-agent/input/logs.json file, you can see the logs of Testora, a tool that aims to find regression bugs for pull requests. 
+
+      2. Write Test Files: To write the tests into the test files, you just need to run the /home/mini-swe-agent/input/testora_test_generation.py script.
+
+    Phase 2: Assertion Logic & File Creation
+
+      1. Write Assertion Files: To write the assertion files, you just need to run the /home/mini-swe-agent/input/testora_assertion_generation.py script. This script generates the assertion files calling the test files from before.
+
+    Phase 3: Environment Setup & Execution
+
+      1. Assume that the project is installed in editable mode in a venv. 
+      
+      2. Activate Venv: Use source /home/clone/scipy/scipy-dev/bin/activate.
+
+      3. Run Initial Tests:
+
+        - Execute all assert[N].py files.
+
+        - Redirect results to input/tests/output/output.txt.
+
+        - Formatting: Prepend each output with Test[N]=====================================. 
+        
+    Phase 4: Bug Diagnosis & Repair
+
+      1. Identify the Bug: Review logs.json for entries marked as regression. Pinpoint the specific SciPy module and function causing the discrepancy.
+
+      2. Apply Fix: Edit the source code in /home/clone/scipy to resolve the identified regression.
+
+      3. Generate Patch: Run git diff > input/tests/output/patch.txt to save your changes.
+
+    Phase 5: Verification & Submission
+
+      1. Re-run Tests: Execute all assert[N].py scripts against the patched source code.
+
+      2. Capture Final Results: Write the new outputs to input/tests/output/output_fix.txt using the same visual separators used previously.
+
+      3. Finalize: Verify all files (patch.txt, output.txt, output_fix.txt) are correctly placed.
+
+    Completion Command:
+    echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
 
     You can execute bash commands and edit files to implement the necessary changes.
 
@@ -102,15 +147,14 @@ agent:
     anything
     ```
   step_limit: 0
-  cost_limit: 1.0
+  cost_limit: 0.
 environment:
-  timeout: 300
-  image: "pandas"
+  image: "mini-swe-custom"
   cwd: "/home/mini-swe-agent"
   run_args: 
     - "--rm"
     - "-v"
-    - "/home/johannes/master-thesis/mini-swe-agent/input:/home/mini-swe-agent/input"
+    - "/home/hierlinger/mini-swe-agent/input:/home/mini-swe-agent/input"
   env:
     PAGER: cat
     MANPAGER: cat
