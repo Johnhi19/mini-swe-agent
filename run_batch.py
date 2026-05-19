@@ -16,6 +16,11 @@ scipy_prs = {
     # '21768': 'ea916c6f7f487bd53e98de082649d542cc6106ed'
 }
 
+marshmallow_prs = {
+    '2800': '76bc28ae74e723760d54f097290ba85e717d5fe4',
+    '2698': 'f6393c378403042904b7c4d7cad34925fe31132c'
+}
+
 def run_batch(project: str, prs: dict, config_file: str = 'default.yaml'):
 
     for pr_nr, target_commit in prs.items():
@@ -50,4 +55,5 @@ write the patch into /home/mini-swe-agent/input/patches/{project}_{pr_nr}.diff w
 if __name__ == "__main__":
 
     #run_batch('pandas', pandas_prs)
-    run_batch('scipy', scipy_prs, 'scipy.yaml')
+    #run_batch('scipy', scipy_prs, 'scipy.yaml')
+    run_batch('marshmallow', marshmallow_prs, 'marshmallow.yaml')

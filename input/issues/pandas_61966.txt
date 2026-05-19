@@ -1,0 +1,56 @@
+BUG: Categorical missing quotes in categories __repr__ for StringDtype (dtype="string")
+Pandas Version Context
+
+Affects development branches modifying pandas.core.arrays.categorical._repr_categories to preserve quoting behavior for modern extension types.
+Description
+
+When displaying a Categorical object constructed using Pandas' modern StringDtype or ArrowDtype extension types (dtype="string"), the category string summary completely omits visual quotation wrappers. This breaks formatting parity with traditional object-dtype string categories, which are cleanly formatted with explicit text quotes (e.g., ['alpha', 'beta']).
+
+This bug occurs due to an over-simplistic type comparison branch added to _repr_categories to grab the unboxed extension array formatter:
+Python
+```
+formatter = None
+if self.categories.dtype == "str":  # <--- THE BUG IS HERE
+    formatter = cast(ExtensionArray, self.categories._values)._formatter(
+        boxed=False
+    )
+```
+
+Why it fails:
+
+In Python, comparing a specialized StringDtype singleton object instance directly to the raw primitive string literal "str" evaluates strictly to False. Because the condition fails silently, formatter remains None, bypassing the intended formatting logic entirely.
+Minimal Reproducible Example
+Python
+```
+import pandas as pd
+from pandas.core.arrays.categorical import Categorical
+
+# Constructing a Categorical using the modern string extension array
+cat = Categorical(
+    ["alpha", "beta"],
+    categories=pd.Index(["alpha", "beta"], dtype="string"),
+)
+
+# Observe the underlying comparison logic mismatch
+print(f"Index Dtype:                         {repr(cat.categories.dtype)}")
+print(f"Condition Match (dtype == 'str'):     {cat.categories.dtype == 'str'}")
+print(f"Actual Representation Output:\n{cat}")
+```
+
+Actual Output
+```
+Index Dtype:                         <StringDtype(na_value=<NA>)>
+Condition Match (dtype == 'str'):     False
+Actual Representation Output:
+['alpha', 'beta']
+Categories (2, string): [alpha, beta]
+```
+
+(Notice that quotes are completely missing from the Categories (...) footer)
+Expected Behavior
+
+The categorical rendering framework should accurately recognize the StringDtype extension instance and output explicit quotes to align seamlessly with the traditional string formatting behavior:
+```
+['alpha', 'beta']
+Categories (2, string): ['alpha', 'beta']
+```

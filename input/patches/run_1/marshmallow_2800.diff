@@ -1,0 +1,13 @@
+diff --git a/src/marshmallow/validate.py b/src/marshmallow/validate.py
+index d56912a3..ec549c09 100644
+--- a/src/marshmallow/validate.py
++++ b/src/marshmallow/validate.py
+@@ -228,7 +228,7 @@ class URL(Validator):
+ 
+         # Hostname is optional for file URLS. If absent it means `localhost`.
+         # Fill it in for the validation if needed
+-        if scheme == "file" and value.startswith("file:///"):
++        if scheme == "file" and value.lower().startswith("file:///"):
+             matched = regex.search(value.replace("file:///", "file://localhost/", 1))
+         else:
+             matched = regex.search(value)

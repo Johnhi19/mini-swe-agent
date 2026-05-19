@@ -1,0 +1,78 @@
+Title:
+
+Broken string formatting syntax in get_fixed_timezone returns literal placeholder string +%02d%02d
+Description:
+
+The get_fixed_timezone utility function produces an invalid tzname string whenever a non-zero timezone offset is supplied.
+
+A refactor intended to replace standard printf-style string formatting (%) with modern string formatting method invocation (.format()) was incorrectly implemented. The code calls .format() on a string literal that still retains old %02d%02d printf tokens instead of the expected curly brace {} placement fields. Because Python silently ignores positional arguments passed to .format() when no matching braces are found, the internal timezone name generator assigns literal formatting syntax tokens into the final name object.
+Reproducing example:
+Python
+```
+import unittest
+import datetime as dt
+from marshmallow.utils import get_fixed_timezone
+
+class TestTimezoneFormatting(unittest.TestCase):
+
+    def test_timezone_name_zero_padding(self):
+        """
+        Validates that an offset of 90 minutes correctly produces 
+        a standard, 4-digit zero-padded tzname '+0130' per ISO 8601 / RFC 3339.
+        """
+        test_input = 90
+        expected_tzname = "+0130"
+        
+        tz = get_fixed_timezone(test_input)
+        actual_tzname = tz.tzname(None)
+        
+        self.assertEqual(
+            actual_tzname, 
+            expected_tzname, 
+            f"Expected tzname to be '{expected_tzname}', but got '{actual_tzname}'."
+        )
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+EExpected to pass the test but got the following:
+```
+FAIL: test_timezone_name_zero_padding (__main__.TestTimezoneFormatting)
+Validates that an offset of 90 minutes correctly produces
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "marshmallow_2698.py", line 18, in test_timezone_name_zero_padding
+    self.assertEqual(
+AssertionError: '+%02d%02d' != '+0130'
+- +%02d%02d
++ +0130
+ : Expected tzname to be '+0130', but got '+%02d%02d'.
+```
+
+Context and technical analysis
+
+Inside marshmallow.utils.get_fixed_timezone, the code responsible for mapping hours and minutes to a padded timezone offset name has been broken:
+Python
+```
+def post_get_fixed_timezone(offset: int | float | dt.timedelta) -> dt.timezone:
+    """Return a tzinfo instance with a fixed offset from UTC."""
+    if isinstance(offset, dt.timedelta):
+        offset = offset.total_seconds() // 60
+    sign = "-" if offset < 0 else "+"
+    hhmm = "%02d%02d".format(*divmod(abs(offset), 60))  # <-- The Bug
+    name = sign + hhmm
+    return dt.timezone(dt.timedelta(minutes=offset), name)
+```
+
+Analysis:
+
+1. Given an offset value of 90, divmod(abs(90), 60) correctly yields a tuple of integer values: (1, 30).
+
+2. The expression "%02d%02d".format(*(1, 30)) evaluates .format() on a string containing no token fields ({}).
+
+3. This evaluation resolves directly to the literal string value "%02d%02d".
+
+4. String concatenation constructs name = sign + hhmm, assigning "+%02d%02d" to the timezone configuration rather than executing numerical substitution.
+
+5. Calling tz.tzname(None) downstream exposes the completely un-rendered formatting specifiers to applications.

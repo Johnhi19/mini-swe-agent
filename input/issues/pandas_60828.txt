@@ -1,0 +1,90 @@
+BUG: `pprint_thing` omits native literal braces for `frozenset` objects (renders `frozenset(1, 2)` instead of `frozenset({1, 2})`)
+
+Pandas Version Context
+Affects development branches modifying `pandas.io.formats.printing._pprint_seq` to support native formatting for set-like structures.
+
+Description
+When pretty-printing containers that include a `frozenset` via `pandas.io.formats.printing.pprint_thing`, the output drops the internal set boundaries completely. Instead of mirroring Python’s native structural layout—which includes internal curly braces inside the parenthesis bounds (e.g., `frozenset({1, 2})`)—it formats the sequence incorrectly as `frozenset(1, 2)`.
+
+This bug happens because literal curly braces inside the underlying `str.format()` template token strings are not escaped. Instead of rendering as raw characters, the formatting engine consumes them as structural replacement targets.
+
+Detailed Reproducing Code
+The following standalone test case verifies the regression against the `pandas` printing utilities:
+
+```python
+import unittest
+from pandas.io.formats.printing import pprint_thing
+
+class TestPandasFrozenSetFormattingBug(unittest.TestCase):
+
+    def test_frozenset_output_contains_braces(self):
+        """
+        Pins out the specific failure where post__pprint_seq formatting 
+        omits literal braces around frozenset elements.
+        
+        Expected output: "frozenset({1, 2})"
+        Actual output:   "frozenset(1, 2)"
+        """
+        sample_frozenset = frozenset([1, 2])
+        
+        formatted_output = pprint_thing(sample_frozenset)
+        
+        print(f"\nCaptured Output from pprint_thing: {formatted_output!r}")
+        
+        self.assertIn(
+            "{", 
+            formatted_output, 
+            "[BUG] The opening brace '{' is missing from the frozenset string representation."
+        )
+        self.assertIn(
+            "}", 
+            formatted_output, 
+            "[BUG] The closing brace '}' is missing from the frozenset string representation."
+        )
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+Actual Test Engine Output & Stack Trace
+Plaintext
+
++ /usr/local/bin/ninja
+[1/1] Generating write_version_file with a custom command
+
+Captured Output from pprint_thing: 'frozenset(1, 2)'
+F
+======================================================================
+FAIL: test_frozenset_output_contains_braces (__main__.TestPandasFrozenSetFormattingBug.test_frozenset_output_contains_braces)
+Pins out the specific failure where post__pprint_seq formatting
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/input/regression_tests/pandas_60828.py", line 23, in test_frozenset_output_contains_braces
+    self.assertIn(
+AssertionError: '{' not found in 'frozenset(1, 2)' : [BUG] The opening brace '{' is missing from the frozenset string representation.
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+
+Root Cause Analysis
+
+Inside pandas/io/formats/printing.py, the token assignment parsing logic manages variations for different collection wrappers:
+Python
+```
+if isinstance(seq, set):
+    fmt = "{{{body}}}"
+elif isinstance(seq, frozenset):
+    fmt = "frozenset({body})"  # <--- The Bug
+else:
+    fmt = "[{body}]" if hasattr(seq, "__setitem__") else "({body})"
+...
+return fmt.format(body=body)
+```
+
+1. How Python's str.format() processes braces: Unescaped single curly braces ({body}) represent evaluation blocks for string substitution arguments. To enforce a raw literal curly brace in the finalized string output, it must be escaped by doubling it ({{ or }}).
+
+2. The set block handles this correctly: It applies a triple-braced layer ({{{body}}}). The outer pairs ({{ and }}) safely resolve into raw text characters, while the inner-most boundary isolates {body} for string assignment.
+
+3. The frozenset block breaks structure: By defining fmt = "frozenset({body})", the string evaluation logic processes {body} as a pure value injection point. Because there are no outer tracking braces, the wrapper characters are omitted entirely from the return sequence, breaking structural fidelity.

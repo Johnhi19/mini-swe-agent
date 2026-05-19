@@ -1,0 +1,49 @@
+BUG: Series.str.contains silently drops flags (e.g. re.IGNORECASE) for PyArrow-backed strings when passing a compiled re.Pattern
+Pandas Version Affected
+
+Found in development branch / regression testing framework (introduced via recent PR adding re.Pattern support to string[pyarrow]).
+Problem Description
+
+A recent pull request added support for passing a compiled re.Pattern object directly into .str.contains() on PyArrow-backed string columns (string[pyarrow]). However, the implementation unrolls the compiled pattern into a raw string using pat = pat.pattern without carrying over or handling the compilation flags (such as re.IGNORECASE, re.MULTILINE, or re.DOTALL).
+
+As a result, any downstream evaluation treats the pattern as purely case-sensitive, diverging completely from standard Python regex semantics and leading to silent data-matching mismatches.
+Reproducible Example
+Python
+```
+import re
+import pandas as pd
+
+# Create a PyArrow-backed string Series
+test_data = pd.Series(["abc", "ABC"], dtype="string[pyarrow]")
+
+# Define a compiled pattern using the re.IGNORECASE flag
+compiled_pat = re.compile("abc", flags=re.IGNORECASE)
+
+# Standard Python behavior (Expected)
+expected = [bool(compiled_pat.search(s)) for s in ["abc", "ABC"]]
+print(f"Expected (Python standard lib): {expected}")
+
+# Pandas behavior (Actual Bug)
+actual = test_data.str.contains(compiled_pat).tolist()
+print(f"Actual (Pandas str.contains):   {actual}")
+
+assert actual == expected, "BUG: Regex flags were dropped!"
+```
+
+Actual Output
+```
+Expected (Python standard lib): [True, True]
+Actual (Pandas str.contains):   [True, False]
+AssertionError: BUG: Regex flags were dropped!
+```
+
+Root Cause Analysis
+
+The bug lives in pandas/core/arrays/string_arrow.py inside the _str_contains method:
+Python
+```
+if isinstance(pat, re.Pattern):
+    pat = pat.pattern
+```
+
+While extracting pat.pattern fixes a NotImplementedError crash by converting the pattern to a primitive string that the underlying Arrow engine understands, it completely discards pat.flags.

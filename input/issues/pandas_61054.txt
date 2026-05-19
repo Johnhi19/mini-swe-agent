@@ -1,0 +1,67 @@
+BUG: df.loc[int, slice] returns incorrect object dtype on mixed-type DataFrames due to is_list_like missing slice objects
+Description
+
+The framework aims to make loc/iloc indexing operations consistently return native, column-first dtypes when evaluated with a scalar row index combined with a list or slice column selector. This solves historical layout-dependent type mismatches (such as the differences between df.loc[0, [1, 2]] and df[[1, 2]].loc[0]).
+
+To guarantee that columns are indexed before rows, the loop order in _getitem_lowerdim was reversed and guarded with an updated data type validation check:
+Python
+```
+# Inside pandas/core/indexing.py -> _getitem_lowerdim
+for i, key in zip(range(len(tup) - 1, -1, -1), reversed(tup)):
+    if is_label_like(key) or is_list_like(key):  # <--- THE BUG IS HERE
+        section = self._getitem_axis(key, axis=i)
+```
+
+Why it fails:
+
+The internal helper function is_list_like(key) explicitly returns False when passed standard Python slice objects (e.g., slice(1, 3)).
+
+Because the condition evaluates to False, the reversed iteration skips processing the column slice altogether. It then falls back into a row-first sequence, calling _getitem_axis along the mixed-type row first. This forces an upcast of the entire intermediary series payload to object dtype, completely undermining the PR's core intent for slice selectors.
+Minimal Reproducible Example
+Python
+```
+import pandas as pd
+import numpy as np
+from pandas.core.dtypes.common import is_list_like
+
+# 1. Setup a DataFrame with mixed types (string and float columns)
+df = pd.DataFrame([["a", 1.0, 2.0], ["b", 3.0, 4.0]])
+
+# 2. Define our multi-axis components
+row_key = 0
+slice_selector = slice(1, 3)  # Selects float columns 1 and 2
+
+# 3. Expose the structural flaw in the check
+print("--- Internal Condition Check ---")
+print(f"Is slice considered list-like?: {is_list_like(slice_selector)}")
+print("\n" + "="*50 + "\n")
+
+# 4. Extract payloads using column-first logic vs multi-axis slice access
+column_first_dtype = df.loc[:, slice_selector].iloc[row_key].dtype
+actual_loc_dtype = df.loc[row_key, slice_selector].dtype
+
+print("--- Resulting Series Dtypes ---")
+print(f"Expected Dtype (Column-First):  {column_first_dtype}")
+print(f"Actual Buggy loc Dtype:         {actual_loc_dtype}")
+```
+
+Actual Output
+```
+--- Internal Condition Check ---
+Is slice considered list-like?: False
+
+==================================================
+
+--- Resulting Series Dtypes ---
+Expected Dtype (Column-First):  float64
+Actual Buggy loc Dtype:         object
+```
+
+Expected Behavior
+
+Because a multi-axis lookup isolating uniform-type columns should preserve their native precision, slice indexers should match the column-first pipeline behavior:
+```
+--- Resulting Series Dtypes ---
+Expected Dtype (Column-First):  float64
+Actual Buggy loc Dtype:         float64
+```

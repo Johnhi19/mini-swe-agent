@@ -1,0 +1,87 @@
+Title:
+
+URL validator rejects hostless file schemes when uppercase or mixed-case (FILE:///...)
+Description:
+
+The URL validator rejects hostless file scheme URLs (e.g., FILE:///etc/hosts) if the scheme prefix contains uppercase or mixed-case characters.
+
+While the validator properly extracts and normalizes the URL scheme to lowercase (scheme = value.split("://")[0].lower()), the subsequent internal conditional check specifically relies on a case-sensitive .startswith("file:///"). This bypasses the hostless localhost routing normalization fallback intended for file URIs under RFC 3986 compliance, causing valid case-insensitive variants to fail validation entirely.
+Reproducing example:
+Python
+```
+import unittest
+from marshmallow.exceptions import ValidationError
+from marshmallow.validate import URL
+
+class TestFileSchemeCaseInsensitivity(unittest.TestCase):
+
+    def test_uppercase_file_scheme(self):
+        """
+        Validates that 'FILE:///' is handled identically to 'file:///' 
+        as URL schemes are case-insensitive per RFC 3986.
+        """
+        test_url = "FILE:///etc/hosts"
+        validate_url = URL(schemes={"http", "https", "file"})
+        
+        try:
+            result = validate_url(test_url)
+            self.assertEqual(result, test_url)
+        except ValidationError as e:
+            self.fail(f"URL validator rejected an uppercase file scheme URL due to case sensitivity: {e}")
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+We expect that the test is successful but we get the following output:
+```
+FAIL: test_uppercase_file_scheme (__main__.TestFileSchemeCaseInsensitivity)
+Validates that 'FILE:///' is handled identically to 'file:///'
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "marshmallow_2800.py", line 16, in test_uppercase_file_scheme
+    result = validate_url(test_url)
+  File "marshmallow/src/marshmallow/validate.py", line 237, in __call__
+    raise ValidationError(message)
+marshmallow.exceptions.ValidationError: Not a valid URL.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "marshmallow_2800.py", line 19, in test_uppercase_file_scheme
+    self.fail(f"URL validator rejected an uppercase file scheme URL due to case sensitivity: {e}")
+AssertionError: URL validator rejected an uppercase file scheme URL due to case sensitivity: Not a valid URL.
+```
+
+Context and technical analysis
+
+Inside marshmallow.validate.URL.__call__, the implementation processes the URI using a logic flow designed to account for optional hostnames in local files:
+Python
+```
+scheme = None
+if "://" in value:
+    scheme = value.split("://")[0].lower()  # <-- Correctly normalized to lowercase
+    if scheme not in self.schemes:
+        raise ValidationError(message)
+
+# ...
+
+# Hostname is optional for file URLS. If absent it means `localhost`.
+# Fill it in for the validation if needed
+if scheme == "file" and value.startswith("file:///"):  # <-- The Bug
+    matched = regex.search(value.replace("file:///", "file://localhost/", 1))
+else:
+    matched = regex.search(value)
+```
+
+Analysis:
+
+1. When inputting "FILE:///etc/hosts", scheme is accurately parsed and lowercased to "file".
+
+2. The conditional expression evaluates scheme == "file" to True.
+
+3. However, value.startswith("file:///") checks the raw, unmodified string (value). Because "FILE:///" does not match "file:///", this evaluation returns False.
+
+4. The control flow bypasses the local fallback block, executing regex.search(value) on the raw string.
+
+5. The underlying strict validation regular expression expects a non-slash hostname pattern following the :// sequence. Because the original input string lacks a structural host domain, validation fails and throws a ValidationError.
