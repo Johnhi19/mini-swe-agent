@@ -1,0 +1,13 @@
+diff --git a/scipy/signal/_filter_design.py b/scipy/signal/_filter_design.py
+index 4e7034e2ee..289ee18098 100644
+--- a/scipy/signal/_filter_design.py
++++ b/scipy/signal/_filter_design.py
+@@ -1293,7 +1293,7 @@ def zpk2tf(z, p, k):
+         if k.shape[0] == 1:
+             k = [k[0]] * z.shape[0]
+         for i in range(z.shape[0]):
+-            k_i = xp.asarray(k[i], dtype=xp.int64)
++            k_i = xp.asarray(k[i])
+             b[i, ...] = k_i * _pu.poly(z[i, ...], xp=xp)
+     else:
+         b = k * _pu.poly(z, xp=xp)

@@ -1,0 +1,13 @@
+diff --git a/pandas/io/formats/printing.py b/pandas/io/formats/printing.py
+index 5a52ee78cb..ab27321ffe 100644
+--- a/pandas/io/formats/printing.py
++++ b/pandas/io/formats/printing.py
+@@ -112,7 +112,7 @@ def _pprint_seq(
+     if isinstance(seq, set):
+         fmt = "{{{body}}}"
+     elif isinstance(seq, frozenset):
+-        fmt = "frozenset({body})"
++        fmt = "frozenset({{{body}}})"
+     else:
+         fmt = "[{body}]" if hasattr(seq, "__setitem__") else "({body})"
+ 

@@ -1,0 +1,38 @@
+diff --git a/pandas/core/arrays/string_arrow.py b/pandas/core/arrays/string_arrow.py
+index 39e84a3abd..778b76d3bc 100644
+--- a/pandas/core/arrays/string_arrow.py
++++ b/pandas/core/arrays/string_arrow.py
+@@ -347,7 +347,32 @@ class ArrowStringArray(ObjectStringArrayMixin, ArrowExtensionArray, BaseStringAr
+         if flags:
+             return super()._str_contains(pat, case, flags, na, regex)
+         if isinstance(pat, re.Pattern):
+-            pat = pat.pattern
++            # Preserve flags from compiled pattern by embedding inline flags in the
++            # pattern string, and merge with any `flags` argument passed in.
++            pat_str = pat.pattern
++            try:
++                combined_flags = (flags or 0) | getattr(pat, 'flags', 0)
++            except Exception:
++                combined_flags = getattr(pat, 'flags', 0)
++            flag_chars = []
++            if combined_flags & re.IGNORECASE:
++                flag_chars.append('i')
++            if combined_flags & re.MULTILINE:
++                flag_chars.append('m')
++            if combined_flags & re.DOTALL:
++                flag_chars.append('s')
++            if combined_flags & re.VERBOSE:
++                flag_chars.append('x')
++            try:
++                # re.ASCII may not exist on very-old Python versions, be defensive
++                if hasattr(re, 'ASCII') and (combined_flags & re.ASCII):
++                    flag_chars.append('a')
++            except Exception:
++                pass
++            if flag_chars:
++                pat = f"(?{''.join(flag_chars)})" + pat_str
++            else:
++                pat = pat_str
+ 
+         return ArrowStringArrayMixin._str_contains(self, pat, case, flags, na, regex)
+ 

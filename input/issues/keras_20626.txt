@@ -1,0 +1,88 @@
+[Bug] Regression in Normalization.build(): ops.broadcast_to breaks non-scalar initialization on multi-axis keep configurations
+Description
+
+A recent optimization in Normalization.build() designed to fix scalar mean/variance initialization regressions introduces a severe regression for non-scalar multi-axis configurations.
+
+By unconditionally replacing ops.reshape with ops.broadcast_to when handling pre-computed (non-adapted) statistics, the layer now crashes if the user provides parameters matching mean_and_var_shape whenever non-contiguous axes are reduced. This occurs because standard array broadcasting rules dictate that a shape like (3, 5) cannot be implicitly aligned or broadcast into (3, 1, 5).
+Minimal Reproducible Example
+Python
+```
+import numpy as np
+from keras.src import ops
+from keras.src.layers.preprocessing.normalization import Normalization
+
+# Input tensor shape: (batch=3, timesteps=4, features=5)
+input_shape = (3, 4, 5)
+# Keep axes 0 and 2; reduce axis 1
+axis = (2, 0)
+
+# Pre-computed stats matching mean_and_var_shape: (3, 5)
+input_mean = np.zeros((3, 5), dtype=np.float32)
+input_variance = np.ones((3, 5), dtype=np.float32)
+
+layer = Normalization(
+    axis=axis, 
+    mean=input_mean, 
+    variance=input_variance, 
+    invert=False
+)
+
+# This triggers the internal shape alignment logic inside build()
+layer.build(input_shape)
+```
+
+Actual Traceback / Error Log
+```
+Traceback (most recent call last):
+  File "/home/input/regression_tests/keras_20626.py", line 20, in <module>
+    layer.build(input_shape)
+  File "/home/keras/keras/src/layers/layer.py", line 226, in build_wrapper
+    original_build_method(*args, **kwargs)
+  File "/home/keras/keras/src/layers/preprocessing/normalization.py", line 193, in build
+    mean = ops.broadcast_to(mean, self._broadcast_shape)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/keras/keras/src/ops/numpy.py", line 1515, in broadcast_to
+    return backend.numpy.broadcast_to(x, shape)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/keras/keras/src/backend/tensorflow/numpy.py", line 926, in broadcast_to
+    return tf.broadcast_to(x, shape)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/tensorflow/python/ops/gen_array_ops.py", line 891, in broadcast_to
+    return broadcast_to_eager_fallback(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/tensorflow/python/ops/gen_array_ops.py", line 937, in broadcast_to_eager_fallback
+    _result = _execute.execute(b"BroadcastTo", 1, inputs=_inputs_flat,
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tensorflow.python.framework.errors_impl.InvalidArgumentError: {{function_node __wrapped__BroadcastTo_device_/job:localhost/replica:0/task:0/device:CPU:0}} Unable to broadcast tensor of shape [3,5] to tensor of shape [3,1,5] [Op:BroadcastTo]
+```
+
+Technical Root Cause Analysis
+
+In the layer initialization code, when pre-computed statistics are supplied, the layer calculates two separate tracking shapes:
+
+    mean_and_var_shape: The raw dimensions of the kept axes (for axis=(2,0) on (3,4,5), this is (3, 5)).
+
+    _broadcast_shape: The target layout containing singletons for reduced axes (in this case, (3, 1, 5)).
+
+Before PR:
+
+The codebase relied on flattening/restructuring via explicit dimension mappings:
+Python
+```
+mean = ops.reshape(mean, self._broadcast_shape)
+```
+
+Reshaping 15 elements from a (3, 5) matrix into a (3, 1, 5) structure is perfectly valid, allowing the layer to seamlessly inject the missing singleton dimensions. However, this broke when handling pure Python scalars.
+After PR (The Regression):
+
+To catch the scalar edge case, the code was refactored to use broadcasting:
+Python
+```
+mean = ops.broadcast_to(mean, self._broadcast_shape)
+```
+
+While ops.broadcast_to cleanly handles expanding a pure scalar () to (3, 1, 5), it breaks on valid non-scalar multi-axis configurations. Under NumPy/TensorFlow backend layout rules, broadcasting aligns dimensions starting from the trailing edge. When matching source shape (3, 5) against target shape (3, 1, 5):
+
+- Dimension -1 aligns: 5 vs 5 (Valid)
+
+- Dimension -2 misaligns: 3 vs 1 (Incompatible! A dimension of 3 cannot be compressed or broadcast into a size 1 singleton slot).

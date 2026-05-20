@@ -1,0 +1,68 @@
+[Bug] Missing parentheses on tf.executing_eagerly bypasses shape validation in TimeDistributed, causing low-level TensorFlow crashes
+Description
+
+A recent optimization to the TimeDistributed layer was introduced to avoid batch-size equality evaluations on partial batches when using the TensorFlow backend in graph mode.
+
+However, a critical typo was introduced in the conditional block: tf.executing_eagerly is checked without parentheses. Because a function object in Python is inherently truthy, not tf.executing_eagerly unconditionally evaluates to False.
+
+This completely bypasses the intended fallback shape validation block for the TensorFlow backend. Consequently, when a mask with mismatched timesteps is provided, Keras fails to intercept it with a user-friendly ValueError and instead lets the execution proceed until it crashes deep inside a TensorFlow runtime loop with an out-of-bounds strided slice error.
+Minimal Reproducible Example
+Python
+```
+import numpy as np
+import tensorflow as tf
+from keras.layers import TimeDistributed, Dense
+
+# Instantiate TimeDistributed layer
+layer = TimeDistributed(Dense(1))
+
+# inputs: batch=4, timesteps=5, features=2
+x = tf.zeros((4, 5, 2))
+
+# Invalid mask: timesteps dimension is 4 instead of matching the input's 5
+mask = tf.ones((4, 4), dtype=tf.bool)
+
+# This call should gracefully raise a ValueError but passes silently or crashes raw
+layer(x, mask=mask)
+```
+
+Expected Behavior
+The layer should intercept the invalid mask shape during the structural check phase and raise a clear, descriptive validation error:
+```
+ValueError: Exception encountered when calling TimeDistributed.call().
+
+The `mask` passed to the `TimeDistributed` layer has a shape (4, 4) that is incompatible with the input shape (4, 5, 2). The first two dimensions of the mask (batch size and timesteps) must match the input's first two dimensions. Expected mask shape prefix: (4, 5).
+
+Arguments received by TimeDistributed.call():
+  • inputs=tf.Tensor(shape=(4, 5, 2), dtype=float32)
+  • training=None
+  • mask=tf.Tensor(shape=(4, 4), dtype=bool)
+```
+
+Actual Log / Traceback
+
+Because the shape validation code block is skipped entirely, it skips straight to the layer transpose loop, leading to a silent pass in some modes
+
+Technical Root Cause Analysis
+
+Inside keras/src/layers/rnn/time_distributed.py, the specialized TensorFlow graph check was modified as follows:
+Python
+```
+if backend.backend() == "tensorflow":
+    from keras.src.utils.module_utils import tensorflow as tf
+
+    if (
+        not tf.executing_eagerly   # <--- THE BUG: Missing method call invocation ()
+        and mask_shape is not None
+        and mask_shape[1:2] != (timesteps,)
+    ):
+        raise ValueError(...)
+```
+
+The Breakdown:
+
+1. The Boolean Trap: tf.executing_eagerly references the function object rather than evaluating its output. In Python, an uncalled function object is always truthy, meaning not <function> evaluates to False.
+
+2. Bypassed Validation: Because the first flag evaluation forces a False output, the entire inner block is skipped unconditionally—even if the system is running in graph mode and the timestep counts are completely broken.
+
+3. Low-Level Crash: The code passes right through to the uncoerced unstack/transpose slices. When inputs loops through 5 timesteps while the mask only has a length of 4, a low-level TensorFlow runtime slice error occurs instead of the expected framework validation.

@@ -1,0 +1,13 @@
+diff --git keras/src/layers/rnn/time_distributed.py keras/src/layers/rnn/time_distributed.py
+index d6c7f57fc..cc46943d9 100644
+--- keras/src/layers/rnn/time_distributed.py
++++ keras/src/layers/rnn/time_distributed.py
+@@ -84,7 +84,7 @@ class TimeDistributed(Wrapper):
+             from keras.src.utils.module_utils import tensorflow as tf
+ 
+             if (
+-                not tf.executing_eagerly
++                not tf.executing_eagerly()
+                 and mask_shape is not None
+                 and mask_shape[1:2] != (timesteps,)
+             ):

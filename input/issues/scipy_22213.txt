@@ -1,0 +1,65 @@
+Bug Report: zpk2tf discards imaginary part of complex gain k when zeros array z is 2-D
+Description
+
+When using scipy.signal.zpk2tf with a 2-D array of zeros z and a complex system gain k, the imaginary part of the gain is silently cast away, resulting in incorrect real-valued numerator coefficients and a ComplexWarning.
+
+While a recent PR successfully fixed this behavior for the 1-D case (allowing b = k * poly(z) to naturally promote to a complex dtype), the multi-dimensional branch still incorrectly pre-allocates a real-valued output array based solely on the dtype of the zeros.
+Reproducible Example
+Python
+```
+import numpy as np
+from scipy.signal import zpk2tf
+
+k = 1.0 + 2.0j
+p = np.array([0.0])
+
+# 1. 1D Baseline (Works correctly, preserves complex output type)
+z_1d = np.array([1.0, 2.0])
+b_1d, _ = zpk2tf(z_1d, p, k)
+print("1D Numerator coefficients:", b_1d)
+
+# 2. 2D Test Case (Triggers the bug: discards the imaginary part)
+z_2d = np.array([[1.0, 2.0], 
+                 [3.0, 4.0]])
+b_2d, _ = zpk2tf(z_2d, p, k)
+print("2D Numerator coefficients:\n", b_2d)
+
+# The first row of the 2D output should match the 1D output
+assert np.allclose(b_2d[0], b_1d), "Regression: 2D branch dropped the complex components!"
+```
+
+Actual Output / Traceback
+```
+1D Numerator coefficients: [ 1.+2.j -3.-6.j  2.+4.j]
+
+/home/scipy/scipy/signal/_filter_design.py:1181: ComplexWarning: Casting complex values to real discards the imaginary part
+  b[i] = k[i] * poly(z[i])
+
+2D Numerator coefficients:
+ [[ 1. -3.  2.]
+ [ 1. -7. 12.]]
+
+Traceback (most recent call last):
+  File "scipy_22213.py", line 17, in <module>
+    assert np.allclose(b_2d[0], b_1d), "Regression: 2D branch dropped the complex components!"
+AssertionError: Regression: 2D branch dropped the complex components!
+```
+
+Root Cause Analysis
+
+The issue stems from how the output array b is pre-allocated inside the 2-D processing block of zpk2tf:
+Python
+```
+if len(z.shape) > 1:
+    temp = poly(z[0])
+    b = np.empty((z.shape[0], z.shape[1] + 1), temp.dtype.char)  # <-- HERE
+    if len(k) == 1:
+        k = [k[0]] * z.shape[0]
+    for i in range(z.shape[0]):
+        b[i] = k[i] * poly(z[i])  # <-- Silently casts complex to float
+```
+
+When z contains real values, temp.dtype.char evaluates to a float type character (e.g., 'd' for float64). As a result, b is instantiated strictly as a real array. When the loop executes b[i] = k[i] * poly(z[i]), assigning the complex product into a float array causes NumPy to truncate the imaginary data and emit a ComplexWarning.
+Expected Behavior
+
+zpk2tf should yield mathematically consistent numerator coefficients regardless of the input dimensions of z. The pre-allocated array b should be typed to accommodate complex numbers if either z or k contains complex values.

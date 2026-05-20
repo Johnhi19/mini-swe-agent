@@ -1,0 +1,79 @@
+diff --git a/doc/source/whatsnew/v3.0.0.rst b/doc/source/whatsnew/v3.0.0.rst
+index d5ab0e2cc7..466e32d222 100644
+--- a/doc/source/whatsnew/v3.0.0.rst
++++ b/doc/source/whatsnew/v3.0.0.rst
+@@ -748,6 +748,7 @@ Indexing
+ - Bug in :meth:`DataFrame.__getitem__` returning modified columns when called with ``slice`` in Python 3.12 (:issue:`57500`)
+ - Bug in :meth:`DataFrame.__getitem__` when slicing a :class:`DataFrame` with many rows raised an ``OverflowError`` (:issue:`59531`)
+ - Bug in :meth:`DataFrame.from_records` throwing a ``ValueError`` when passed an empty list in ``index`` (:issue:`58594`)
++- Bug in :meth:`DataFrame.loc` and :meth:`DataFrame.iloc` returning incorrect dtype when selecting from a :class:`DataFrame` with mixed data types. (:issue:`60600`)
+ - Bug in :meth:`DataFrame.loc` with inconsistent behavior of loc-set with 2 given indexes to Series (:issue:`59933`)
+ - Bug in :meth:`Index.get_indexer` and similar methods when ``NaN`` is located at or after position 128 (:issue:`58924`)
+ - Bug in :meth:`MultiIndex.insert` when a new value inserted to a datetime-like level gets cast to ``NaT`` and fails indexing (:issue:`60388`)
+diff --git a/pandas/core/indexing.py b/pandas/core/indexing.py
+index 34a437ba40..68036b1ede 100644
+--- a/pandas/core/indexing.py
++++ b/pandas/core/indexing.py
+@@ -1066,8 +1066,10 @@ class _LocationIndexer(NDFrameIndexerBase):
+ 
+         tup = self._validate_key_length(tup)
+ 
+-        for i, key in enumerate(tup):
+-            if is_label_like(key):
++        # Reverse tuple so that we are indexing along columns before rows
++        # and avoid unintended dtype inference. # GH60600
++        for i, key in zip(range(len(tup) - 1, -1, -1), reversed(tup)):
++            if is_label_like(key) or is_list_like(key):
+                 # We don't need to check for tuples here because those are
+                 #  caught by the _is_nested_tuple_indexer check above.
+                 section = self._getitem_axis(key, axis=i)
+diff --git a/pandas/tests/indexing/multiindex/test_loc.py b/pandas/tests/indexing/multiindex/test_loc.py
+index 1d3258ab18..70d71de66d 100644
+--- a/pandas/tests/indexing/multiindex/test_loc.py
++++ b/pandas/tests/indexing/multiindex/test_loc.py
+@@ -757,7 +757,7 @@ class TestKeyErrorsWithMultiIndex:
+         df = DataFrame(np.arange(12).reshape(4, 3), columns=["A", "B", "C"])
+         df2 = df.set_index(["A", "B"])
+ 
+-        with pytest.raises(KeyError, match="1"):
++        with pytest.raises(KeyError, match="6"):
+             df2.loc[(1, 6)]
+ 
+     def test_missing_key_raises_keyerror2(self):
+diff --git a/pandas/tests/indexing/test_loc.py b/pandas/tests/indexing/test_loc.py
+index 8838fc7eed..ccb58aae27 100644
+--- a/pandas/tests/indexing/test_loc.py
++++ b/pandas/tests/indexing/test_loc.py
+@@ -60,6 +60,14 @@ def test_not_change_nan_loc(series, new_series, expected_ser):
+     tm.assert_frame_equal(df.notna(), ~expected)
+ 
+ 
++def test_loc_dtype():
++    # GH 60600
++    df = DataFrame([["a", 1.0, 2.0], ["b", 3.0, 4.0]])
++    result = df.loc[0, [1, 2]]
++    expected = Series([1.0, 2.0], index=[1, 2], dtype=float, name=0)
++    tm.assert_series_equal(result, expected)
++
++
+ class TestLoc:
+     def test_none_values_on_string_columns(self, using_infer_string):
+         # Issue #32218
+@@ -441,7 +449,7 @@ class TestLocBaseIndependent:
+ 
+         msg = (
+             rf"\"None of \[Index\(\[1, 2\], dtype='{np.dtype(int)}'\)\] are "
+-            r"in the \[index\]\""
++            r"in the \[columns\]\""
+         )
+         with pytest.raises(KeyError, match=msg):
+             df.loc[[1, 2], [1, 2]]
+@@ -807,7 +815,7 @@ class TestLocBaseIndependent:
+ 
+         result = df.loc[0, [1, 2]]
+         expected = Series(
+-            [1, 3], index=Index([1, 2], dtype=object), dtype=object, name=0
++            [1, 3], index=Index([1, 2], dtype=object), dtype="int64", name=0
+         )
+         tm.assert_series_equal(result, expected)
+ 

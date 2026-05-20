@@ -1,0 +1,21 @@
+diff --git a/pandas/core/arrays/string_arrow.py b/pandas/core/arrays/string_arrow.py
+index 39e84a3abd..aff0cb1000 100644
+--- a/pandas/core/arrays/string_arrow.py
++++ b/pandas/core/arrays/string_arrow.py
+@@ -344,11 +344,14 @@ class ArrowStringArray(ObjectStringArrayMixin, ArrowExtensionArray, BaseStringAr
+         na=lib.no_default,
+         regex: bool = True,
+     ):
+-        if flags:
+-            return super()._str_contains(pat, case, flags, na, regex)
+         if isinstance(pat, re.Pattern):
++            # Preserve regex flags from the compiled pattern (e.g. IGNORECASE)
++            flags |= pat.flags
+             pat = pat.pattern
+ 
++        if flags:
++            return super()._str_contains(pat, case, flags, na, regex)
++
+         return ArrowStringArrayMixin._str_contains(self, pat, case, flags, na, regex)
+ 
+     def _str_replace(

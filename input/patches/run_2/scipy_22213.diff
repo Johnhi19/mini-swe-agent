@@ -1,0 +1,22 @@
+diff --git a/scipy/signal/_filter_design.py b/scipy/signal/_filter_design.py
+index 459d7087c7..2454fd370b 100644
+--- a/scipy/signal/_filter_design.py
++++ b/scipy/signal/_filter_design.py
+@@ -1174,7 +1174,16 @@ def zpk2tf(z, p, k):
+     k = atleast_1d(k)
+     if len(z.shape) > 1:
+         temp = poly(z[0])
+-        b = np.empty((z.shape[0], z.shape[1] + 1), temp.dtype.char)
++            # Preserve complex dtype if either zeros or gain are complex
++    out_dtype = temp.dtype
++    try:
++        k_arr = np.asarray(k)
++        if np.iscomplexobj(k_arr) or np.iscomplexobj(z):
++            out_dtype = np.result_type(temp.dtype, np.complex128)
++    except Exception:
++        if np.iscomplexobj(z):
++            out_dtype = np.result_type(temp.dtype, np.complex128)
++    b = np.empty((z.shape[0], z.shape[1] + 1), dtype=out_dtype)
+         if len(k) == 1:
+             k = [k[0]] * z.shape[0]
+         for i in range(z.shape[0]):

@@ -1,0 +1,35 @@
+diff --git a/keras/src/layers/preprocessing/normalization.py b/keras/src/layers/preprocessing/normalization.py
+index 54ed025c9..c56b1b47a 100644
+--- a/keras/src/layers/preprocessing/normalization.py
++++ b/keras/src/layers/preprocessing/normalization.py
+@@ -190,8 +190,28 @@ class Normalization(TFDataLayer):
+             # with proper broadcast shape for use during call.
+             mean = ops.convert_to_tensor(self.input_mean)
+             variance = ops.convert_to_tensor(self.input_variance)
+-            mean = ops.broadcast_to(mean, self._broadcast_shape)
+-            variance = ops.broadcast_to(variance, self._broadcast_shape)
++            # Align pre-computed statistics to broadcast layout.
++            # Use reshape for non-scalar arrays that match mean_and_var_shape (inserting singleton dims),
++            # fall back to broadcast_to for scalars or other broadcastable shapes.
++            try:
++                _src_shape = tuple(np.shape(self.input_mean))
++            except Exception:
++                _src_shape = None
++            if _src_shape is not None and tuple(mean_and_var_shape) == _src_shape:
++                mean = ops.reshape(mean, self._broadcast_shape)
++            else:
++                mean = ops.broadcast_to(mean, self._broadcast_shape)
++
++            # Align pre-computed statistics to broadcast layout.
++            try:
++                _src_shape = tuple(np.shape(self.input_variance))
++            except Exception:
++                _src_shape = None
++            if _src_shape is not None and tuple(mean_and_var_shape) == _src_shape:
++                variance = ops.reshape(variance, self._broadcast_shape)
++            else:
++                variance = ops.broadcast_to(variance, self._broadcast_shape)
++
+             self.mean = ops.cast(mean, dtype=self.compute_dtype)
+             self.variance = ops.cast(variance, dtype=self.compute_dtype)
+             self.built = True

@@ -1,0 +1,17 @@
+diff --git a/keras/src/backend/numpy/image.py b/keras/src/backend/numpy/image.py
+index 37e1471e3..688f5d171 100644
+--- a/keras/src/backend/numpy/image.py
++++ b/keras/src/backend/numpy/image.py
+@@ -868,9 +868,11 @@ def gaussian_blur(
+                 ((pad_h, pad_h), (pad_w, pad_w)),
+                 mode="constant",
+             )
+-            blurred_images[b, :, :, ch] = scipy.signal.convolve2d(
++            blurred_images[b, :, :, ch] =             conv = scipy.signal.convolve2d(
+                 padded, kernel[:, :, ch], mode="valid"
+             )
++            conv = conv[:height, :width]
++            blurred_images[b, :, :, ch] = conv
+ 
+     if data_format == "channels_first":
+         blurred_images = np.transpose(blurred_images, (0, 3, 1, 2))

@@ -1,0 +1,31 @@
+diff --git a/pandas/core/arrays/string_arrow.py b/pandas/core/arrays/string_arrow.py
+index 39e84a3abd..a6563a73ad 100644
+--- a/pandas/core/arrays/string_arrow.py
++++ b/pandas/core/arrays/string_arrow.py
+@@ -347,9 +347,24 @@ class ArrowStringArray(ObjectStringArrayMixin, ArrowExtensionArray, BaseStringAr
+         if flags:
+             return super()._str_contains(pat, case, flags, na, regex)
+         if isinstance(pat, re.Pattern):
++            # Preserve regex flags when converting from compiled pattern to string
++            flags = pat.flags
+             pat = pat.pattern
+-
+-        return ArrowStringArrayMixin._str_contains(self, pat, case, flags, na, regex)
++            if flags:
++                flag_chars = []
++                if flags & re.IGNORECASE:
++                    flag_chars.append('i')
++                if flags & re.MULTILINE:
++                    flag_chars.append('m')
++                if flags & re.DOTALL:
++                    flag_chars.append('s')
++                if flags & re.ASCII:
++                    flag_chars.append('a')
++                if flags & re.VERBOSE:
++                    flag_chars.append('x')
++                pat = '(?'+''.join(flag_chars)+')'+pat
++
++        return ArrowStringArrayMixin._str_contains(self, pat, case, 0, na, regex)
+ 
+     def _str_replace(
+         self,

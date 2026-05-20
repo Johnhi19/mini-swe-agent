@@ -1,0 +1,39 @@
+diff --git a/keras/src/layers/preprocessing/index_lookup.py b/keras/src/layers/preprocessing/index_lookup.py
+index 27cee5c11..5cfe77525 100644
+--- a/keras/src/layers/preprocessing/index_lookup.py
++++ b/keras/src/layers/preprocessing/index_lookup.py
+@@ -395,7 +395,7 @@ class IndexLookup(Layer):
+             self._record_vocabulary_size()
+             return
+ 
+-        if not tf.executing_eagerly() and (
++        if not tf.executing_eagerly()() and (
+             tf.is_tensor(vocabulary) or tf.is_tensor(idf_weights)
+         ):
+             raise RuntimeError(
+diff --git a/keras/src/layers/rnn/time_distributed.py b/keras/src/layers/rnn/time_distributed.py
+index d6c7f57fc..9653e53cd 100644
+--- a/keras/src/layers/rnn/time_distributed.py
++++ b/keras/src/layers/rnn/time_distributed.py
+@@ -84,7 +84,7 @@ class TimeDistributed(Wrapper):
+             from keras.src.utils.module_utils import tensorflow as tf
+ 
+             if (
+-                not tf.executing_eagerly
++                not tf.executing_eagerly()()
+                 and mask_shape is not None
+                 and mask_shape[1:2] != (timesteps,)
+             ):
+diff --git a/keras/src/utils/backend_utils.py b/keras/src/utils/backend_utils.py
+index 05e637d44..65e5c23cb 100644
+--- a/keras/src/utils/backend_utils.py
++++ b/keras/src/utils/backend_utils.py
+@@ -15,7 +15,7 @@ def in_tf_graph():
+     if "tensorflow" in sys.modules:
+         from keras.src.utils.module_utils import tensorflow as tf
+ 
+-        return not tf.executing_eagerly()
++        return not tf.executing_eagerly()()
+     return False
+ 
+ 

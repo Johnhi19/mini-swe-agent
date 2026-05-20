@@ -1,0 +1,71 @@
+Bug Report: zpk2tf unconditionally casts array-like gain k to int64, truncating fractional values
+Description
+
+When using scipy.signal.zpk2tf with a multi-dimensional array of zeros z and an array-like system gain k containing floating-point (fractional) numbers, the elements of k are unconditionally cast to xp.int64. This truncates non-integer values (e.g., 5.5 becomes 5) and completely breaks support for complex-valued gains in multi-row setups.
+
+This regression was introduced while attempting to add Array API support for multi-dimensional inputs.
+Reproducible Example
+Python
+```
+import numpy as np
+from scipy.signal import zpk2tf
+
+# 2D zeros (2 rows, 2 columns)
+z = np.array([[2.0, 6.0],
+              [3.0, 4.0]])
+p = np.array([1.0, 8.0])
+
+# Non-integer fractional gains per row
+k = np.array([5.5, 7.25])
+
+# Trigger the function
+b, a = zpk2tf(z, p, k)
+
+expected_b_row0 = np.array([5.5, -44.0, 66.0])
+actual_b_row0 = np.array(b[0])
+
+print(f"Expected coefficients for row 0: {expected_b_row0}")
+print(f"Actual coefficients for row 0:   {actual_b_row0}")
+
+# Assert that precision is properly maintained
+assert np.allclose(actual_b_row0, expected_b_row0, atol=1e-12), (
+    f"Regression Detected: Fractional gain was truncated. "
+    f"Expected {expected_b_row0}, but got {actual_b_row0}"
+)
+```
+
+Actual Output / Traceback
+```
+Expected coefficients for row 0: [  5.5 -44.   66. ]
+Actual coefficients for row 0:   [  5. -40.  60.]
+
+Traceback (most recent call last):
+  File "scipy_23341.py", line 21, in <module>
+    assert np.allclose(actual_b_row0, expected_b_row0, atol=1e-12), (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Regression Detected: Fractional gain was truncated. Expected [  5.5 -44.   66. ], but got [  5. -40.  60.]
+```
+
+Root Cause Analysis
+
+The bug resides within the newly modified multi-dimensional loop branch of zpk2tf.
+
+Pre-PR Implementation:
+The loop multiplied each row directly by the unmodified element of k, respecting its native floating-point or complex type:
+Python
+```
+b[i] = k[i] * _pu.poly(z[i], xp=xp)
+```
+
+Post-PR Implementation:
+An explicit, unconditional conversion to xp.int64 was added when isolating k_i for row-by-row iteration:
+Python
+```
+k_i = xp.asarray(k[i], dtype=xp.int64)  # <-- HERE: Unconditional truncation
+b[i, ...] = k_i * _pu.poly(z[i, ...], xp=xp)
+```
+
+While the early setup blocks in the PR contain appropriate guarding logic that only forces integer downcasting if xp.isdtype(k.dtype, 'integral') evaluates to true, this inner loop line ignores that safety mechanism. It forcefully coerces float-valued or complex-valued gains down into integers.
+Expected Behavior
+
+zpk2tf must preserve the numerical semantics of the system gain k. Floating-point gains should scale the resulting polynomial coefficients accurately without rounding down to the nearest integer, and complex gains should not cause scalar casting failures.

@@ -1,0 +1,21 @@
+diff --git a/pandas/core/arrays/categorical.py b/pandas/core/arrays/categorical.py
+index 768477d55e..c91fe10dd9 100644
+--- a/pandas/core/arrays/categorical.py
++++ b/pandas/core/arrays/categorical.py
+@@ -40,6 +40,7 @@ from pandas.core.dtypes.common import (
+     is_scalar,
+     needs_i8_conversion,
+     pandas_dtype,
++    is_string_dtype,
+ )
+ from pandas.core.dtypes.dtypes import (
+     ArrowDtype,
+@@ -2234,7 +2235,7 @@ class Categorical(NDArrayBackedExtensionArray, PandasObject, ObjectStringArrayMi
+         from pandas.io.formats import format as fmt
+ 
+         formatter = None
+-        if self.categories.dtype == "str":
++        if is_string_dtype(self.categories.dtype):
+             # the extension array formatter defaults to boxed=True in format_array
+             # override here to boxed=False to be consistent with QUOTE_NONNUMERIC
+             formatter = cast(ExtensionArray, self.categories._values)._formatter(
